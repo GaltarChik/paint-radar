@@ -10,12 +10,14 @@ from pathlib import Path
 
 import streamlit as st
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import (APIConnectionError, APIStatusError, APITimeoutError, AuthenticationError,
+                    OpenAI, RateLimitError)
 
 import prompts
 
 SAMPLE_FILE = Path(__file__).parent / "sample_posts.txt"
 MIN_POST_LENGTH = 20  # shorter posts ("lol same") carry no useful signal
+MIN_POSTS = 3  # with fewer posts there is nothing "common" to find
 # Step 1 answer is ~35 tokens per post, so 2000 tokens is enough for ~50 posts
 STEP1_MAX_TOKENS = 2000
 
@@ -45,19 +47,24 @@ def parse_json(raw):
 
 
 def ask_llm(model, system_prompt, user_prompt, temperature=0.0, top_p=1.0, max_tokens=1000):
-    """One Chat Completions call in JSON mode. Returns the answer as a Python dict."""
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=temperature,
-        top_p=top_p,
-        max_tokens=max_tokens,
-        response_format={"type": "json_object"},  # the model must answer with a JSON object
-    )
-    return parse_json(response.choices[0].message.content)
+    """One Chat Completions call in JSON mode. Returns the answer as a Python dict.
+    If the JSON is broken, asks the model once more; after a second failure raises ValueError."""
+    for attempt in (1, 2):
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "system", "content": system_prompt},
+                      {"role": "user", "content": user_prompt}],
+            temperature=temperature, top_p=top_p, max_tokens=max_tokens,
+            response_format={"type": "json_object"},  # the model must answer with a JSON object
+        )
+        if response.choices[0].finish_reason == "length":  # cut off: a retry would be cut off too
+            raise ValueError("the answer was cut off by the max_tokens limit. "
+                             "Increase Max tokens (step 2) or use fewer posts (step 1).")
+        try:
+            return parse_json(response.choices[0].message.content)
+        except ValueError:
+            if attempt == 2:
+                raise ValueError("the model returned broken JSON twice. Please try again.")
 
 
 # ---------- LLM step 1: classification ----------
@@ -95,6 +102,37 @@ def load_file():
         st.session_state.posts_text = uploaded.getvalue().decode("utf-8", errors="ignore")
 
 
+# ---------- The whole AI pipeline (uses the sidebar settings defined below) ----------
+
+def run_analysis(posts):
+    st.success(f"Found {len(posts)} posts (posts shorter than {MIN_POST_LENGTH} characters are skipped).")
+    with st.spinner(f"Step 1: classifying posts with {model_step1} ({technique})..."):
+        results = classify_posts(posts, model_step1, few_shot=(technique == "Few-shot"))
+
+    st.subheader("Step 1: Classification")
+    rows = [{"#": r["id"], "Post": posts[r["id"] - 1][:100] + "...",  # ids start at 1, lists at 0
+             "Problem?": "✅" if r["is_problem"] else "—", "Problem": r.get("problem", "")}
+            for r in results]
+    st.dataframe(rows, hide_index=True, width="stretch")
+
+    problems = [r["problem"] for r in results if r["is_problem"]]
+    if not problems:
+        st.info("No problems found in these posts, so there is nothing to group.")
+        return
+
+    with st.spinner(f"Step 2: grouping {len(problems)} problems into themes with {model_step2}..."):
+        reasoning, themes = find_themes(problems, model_step2, temperature, top_p, max_tokens, n_themes)
+
+    st.subheader("Step 2: Top problems and product ideas")
+    for i, theme in enumerate(themes, start=1):
+        with st.expander(f"{i}. {theme['name']} ({theme['count']} posts)", expanded=(i == 1)):
+            st.write(theme["description"])
+            st.markdown(f"**Example:** *{theme['example_problem']}*")
+            st.success(f"💡 **Product idea:** {theme['product_idea']}")
+    with st.expander("🧠 How the model reasoned"):
+        st.write(reasoning)
+
+
 # ---------- Sidebar: settings ----------
 
 st.set_page_config(page_title="Pain Radar", page_icon="📡")
@@ -129,34 +167,26 @@ st.text_area("Posts", key="posts_text", height=300, placeholder="Paste posts her
 
 if st.button("Analyze", type="primary"):
     posts = split_posts(st.session_state.posts_text)
-    st.success(f"Found {len(posts)} posts (posts shorter than {MIN_POST_LENGTH} characters are skipped).")
-
+    # Checks BEFORE calling the API: they cost nothing and give the clearest message
     if client is None:
-        st.error("OPENAI_API_KEY is missing. Add it to the .env file.")
-        st.stop()
-
-    with st.spinner(f"Step 1: classifying posts with {model_step1} ({technique})..."):
-        results = classify_posts(posts, model_step1, few_shot=(technique == "Few-shot"))
-
-    st.subheader("Step 1: Classification")
-    rows = [{"#": r["id"], "Post": posts[r["id"] - 1][:100] + "...",  # ids start at 1, lists at 0
-             "Problem?": "✅" if r["is_problem"] else "—", "Problem": r.get("problem", "")}
-            for r in results]
-    st.dataframe(rows, hide_index=True, width="stretch")
-
-    problems = [r["problem"] for r in results if r["is_problem"]]
-    if not problems:
-        st.info("No problems found in these posts, so there is nothing to group.")
-        st.stop()
-
-    with st.spinner(f"Step 2: grouping {len(problems)} problems into themes with {model_step2}..."):
-        reasoning, themes = find_themes(problems, model_step2, temperature, top_p, max_tokens, n_themes)
-
-    st.subheader("Step 2: Top problems and product ideas")
-    for i, theme in enumerate(themes, start=1):
-        with st.expander(f"{i}. {theme['name']} ({theme['count']} posts)", expanded=(i == 1)):
-            st.write(theme["description"])
-            st.markdown(f"**Example:** *{theme['example_problem']}*")
-            st.success(f"💡 **Product idea:** {theme['product_idea']}")
-    with st.expander("🧠 How the model reasoned"):
-        st.write(reasoning)
+        st.error("🔑 OPENAI_API_KEY is missing. Copy .env.example to .env and add your key.")
+    elif len(posts) < MIN_POSTS:
+        st.warning(f"Found {len(posts)} posts. Pain Radar needs at least {MIN_POSTS} posts "
+                   f"(separated by a blank line, each at least {MIN_POST_LENGTH} characters).")
+    else:
+        try:
+            run_analysis(posts)
+        # Errors from the OpenAI SDK (it has already retried timeouts and 429 three times)
+        except AuthenticationError:
+            st.error("🔑 The API key was rejected. Check OPENAI_API_KEY in the .env file.")
+        except RateLimitError:
+            st.error("⏳ Rate limit or quota exceeded. Wait a minute or check your OpenAI billing.")
+        except (APITimeoutError, APIConnectionError):
+            st.error("🌐 Could not reach OpenAI (timeout or no internet). Check your connection and retry.")
+        except APIStatusError as e:  # any other API error, e.g. 404 = wrong model name
+            st.error(f"⚠️ OpenAI error {e.status_code}. Check the model names in the sidebar. Details: {e.message}")
+        # Errors in the model's answer
+        except ValueError as e:
+            st.error(f"🧩 Could not read the model's answer: {e}")
+        except (KeyError, IndexError, TypeError):
+            st.error("🧩 The model's answer has an unexpected structure. Please try again.")
