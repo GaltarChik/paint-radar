@@ -8,8 +8,7 @@ from pathlib import Path
 
 import streamlit as st
 from dotenv import load_dotenv
-from openai import (APIConnectionError, APIStatusError, APITimeoutError, AuthenticationError,
-                    OpenAI, RateLimitError)
+from openai import APIConnectionError, APIStatusError, AuthenticationError, OpenAI, RateLimitError
 
 import prompts
 
@@ -118,7 +117,8 @@ def run_analysis(posts):
     col3.metric("Problem share", f"{len(problems) / len(posts):.0%}")
 
     st.subheader("Step 1: Classification")
-    rows = [{"#": r["id"], "Post": posts[r["id"] - 1][:100] + "...",  # ids start at 1, lists at 0
+    short = lambda text: text if len(text) <= 100 else text[:100] + "..."  # cut only long posts
+    rows = [{"#": r["id"], "Post": short(posts[r["id"] - 1]),  # ids start at 1, lists at 0
              "Problem?": r["is_problem"], "Problem": r.get("problem", "")}  # bool -> checkbox
             for r in results]
     st.dataframe(rows, hide_index=True, width="stretch")
@@ -186,7 +186,7 @@ if st.button("Analyze", type="primary", icon=":material/manage_search:"):
             st.error("The API key was rejected. Check OPENAI_API_KEY in the .env file.", icon=":material/key:")
         except RateLimitError:
             st.error("Rate limit or quota exceeded. Wait a minute or check your billing.", icon=":material/hourglass_top:")
-        except (APITimeoutError, APIConnectionError):
+        except APIConnectionError:  # also covers APITimeoutError, which is a subclass of it
             st.error("Could not reach OpenAI (timeout or no internet). Check your connection and retry.",
                      icon=":material/wifi_off:")
         except APIStatusError as e:  # any other API error, e.g. 404 = wrong model name
