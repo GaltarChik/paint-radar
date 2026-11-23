@@ -73,7 +73,7 @@ def load_file():
 st.set_page_config(page_title="Pain Radar", page_icon="📡")
 st.sidebar.header("Settings")
 # Two models: a cheap, fast one for many small decisions, a stronger one for the final report
-model_step1 = st.sidebar.text_input("Model for step 1 (classification)", "gpt-4.1-nano")
+model_step1 = st.sidebar.text_input("Model for step 1 (classification)", "gpt-4o-mini")
 model_step2 = st.sidebar.text_input("Model for step 2 (themes report)", "gpt-4.1-mini")
 
 # TEMPORARY (stage 2): check that both models answer. Will be removed later.
