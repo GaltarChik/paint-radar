@@ -1,0 +1,37 @@
+# Pain Radar theme: "a printout marked with a highlighter".
+# White paper, black ink, a yellow highlighter, a red pen. Same palette as the project site (docs/index.html).
+
+[theme]
+base = "light"
+font = "Archivo:https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap"
+headingFont = "Archivo"
+headingFontWeights = [800, 800, 700, 700, 600, 600]
+metricValueFontWeight = 800
+
+primaryColor = "#141414"             # ink: primary button, sliders, focus
+backgroundColor = "#FDFDFB"          # paper
+secondaryBackgroundColor = "#F1F1EC" # inputs, table header
+textColor = "#141414"
+borderColor = "#D9D9D2"
+showWidgetBorder = true
+linkColor = "#141414"
+baseRadius = "0.3rem"
+buttonRadius = "0.3rem"
+dataframeHeaderBackgroundColor = "#F1F1EC"
+
+# Message boxes. st.success is used only for product ideas, so it gets the highlighter.
+greenBackgroundColor = "#FFE94D"
+greenTextColor = "#141414"
+yellowBackgroundColor = "#FFF5BF"
+yellowTextColor = "#141414"
+redColor = "#B3261E"                 # red pen
+redBackgroundColor = "#FBE9E7"
+redTextColor = "#8C1D18"
+blueBackgroundColor = "#EEF0F2"
+blueTextColor = "#141414"
+
+# The settings sidebar is the yellow margin of the printout
+[theme.sidebar]
+backgroundColor = "#FFF5BF"
+secondaryBackgroundColor = "#FFFDF0"
+borderColor = "#E3D57F"

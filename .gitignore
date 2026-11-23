@@ -1,5 +1,6 @@
 # Secrets: the API key lives only here
 .env
+.streamlit/secrets.toml
 
 # Virtual environments
 venv/

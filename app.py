@@ -119,7 +119,7 @@ def run_analysis(posts):
 
     st.subheader("Step 1: Classification")
     rows = [{"#": r["id"], "Post": posts[r["id"] - 1][:100] + "...",  # ids start at 1, lists at 0
-             "Problem?": "✅" if r["is_problem"] else "—", "Problem": r.get("problem", "")}
+             "Problem?": r["is_problem"], "Problem": r.get("problem", "")}  # bool -> checkbox
             for r in results]
     st.dataframe(rows, hide_index=True, width="stretch")
     if not problems:
@@ -134,16 +134,17 @@ def run_analysis(posts):
         with st.expander(f"{i}. {theme['name']} ({theme['count']} posts)", expanded=(i == 1)):
             st.write(theme["description"])
             st.markdown(f"**Example:** *{theme['example_problem']}*")
-            st.success(f"💡 **Product idea:** {theme['product_idea']}")
-    with st.expander("🧠 How the model reasoned"):
+            st.success(f"**Product idea:** {theme['product_idea']}", icon=":material/lightbulb:")
+    with st.expander("How the model reasoned", icon=":material/psychology:"):
         st.write(reasoning)
     # on_click="ignore": downloading does not rerun the app, so the results stay on screen
-    st.download_button("⬇️ Download report (.md)", make_report(themes, reasoning, len(posts), len(problems)),
-                       file_name="pain_radar_report.md", mime="text/markdown", on_click="ignore")
+    st.download_button("Download report (.md)", make_report(themes, reasoning, len(posts), len(problems)),
+                       file_name="pain_radar_report.md", mime="text/markdown", on_click="ignore",
+                       icon=":material/download:")
 
 
 # ---------- Sidebar: settings ----------
-st.set_page_config(page_title="Pain Radar", page_icon="📡")
+st.set_page_config(page_title="Pain Radar", page_icon=":material/radar:")
 st.sidebar.header("Settings")
 # Two models: a cheap, fast one for many small decisions, a stronger one for the final report
 model_step1 = st.sidebar.text_input("Model for step 1 (classification)", "gpt-4o-mini")
@@ -160,37 +161,39 @@ max_tokens = st.sidebar.slider("Max tokens", 300, 3000, 1500, 100, help="Length 
 n_themes = st.sidebar.slider("Number of themes", 2, 6, 4)
 
 # ---------- Main page ----------
-st.title("📡 Pain Radar")
+st.title("Pain Radar")
 st.write("Paste Reddit posts (one post per paragraph, separated by a blank line). Pain Radar finds what "
          "people complain about most and suggests a product idea for each problem.")
 
 col_demo, col_file = st.columns(2)
-col_demo.button("Load demo posts", on_click=load_demo)
+col_demo.button("Load demo posts", on_click=load_demo, icon=":material/article:")
 col_file.file_uploader("…or upload a .txt file", type=["txt"], key="uploaded_file", on_change=load_file)
 st.text_area("Posts", key="posts_text", height=300, placeholder="Paste posts here...")
 
-if st.button("Analyze", type="primary"):
+if st.button("Analyze", type="primary", icon=":material/manage_search:"):
     posts = split_posts(st.session_state.posts_text)
     # Checks BEFORE calling the API: they cost nothing and give the clearest message
     if client is None:
-        st.error("🔑 OPENAI_API_KEY is missing. Copy .env.example to .env and add your key.")
+        st.error("OPENAI_API_KEY is missing. Copy .env.example to .env and add your key.", icon=":material/key:")
     elif len(posts) < MIN_POSTS:
-        st.warning(f"Found {len(posts)} posts. Pain Radar needs at least {MIN_POSTS} posts "
-                   f"(separated by a blank line, each at least {MIN_POST_LENGTH} characters).")
+        st.warning(f"Found {len(posts)} posts. Pain Radar needs at least {MIN_POSTS} posts (separated by a "
+                   f"blank line, each at least {MIN_POST_LENGTH} characters).", icon=":material/info:")
     else:
         try:
             run_analysis(posts)
         # Errors from the OpenAI SDK (it has already retried timeouts and 429 three times)
         except AuthenticationError:
-            st.error("🔑 The API key was rejected. Check OPENAI_API_KEY in the .env file.")
+            st.error("The API key was rejected. Check OPENAI_API_KEY in the .env file.", icon=":material/key:")
         except RateLimitError:
-            st.error("⏳ Rate limit or quota exceeded. Wait a minute or check your OpenAI billing.")
+            st.error("Rate limit or quota exceeded. Wait a minute or check your billing.", icon=":material/hourglass_top:")
         except (APITimeoutError, APIConnectionError):
-            st.error("🌐 Could not reach OpenAI (timeout or no internet). Check your connection and retry.")
+            st.error("Could not reach OpenAI (timeout or no internet). Check your connection and retry.",
+                     icon=":material/wifi_off:")
         except APIStatusError as e:  # any other API error, e.g. 404 = wrong model name
-            st.error(f"⚠️ OpenAI error {e.status_code}. Check the model names in the sidebar. Details: {e.message}")
+            st.error(f"OpenAI error {e.status_code}. Check the model names in the sidebar. Details: {e.message}",
+                     icon=":material/error:")
         # Errors in the model's answer
         except ValueError as e:
-            st.error(f"🧩 Could not read the model's answer: {e}")
+            st.error(f"Could not read the model's answer: {e}", icon=":material/data_object:")
         except (KeyError, IndexError, TypeError):
-            st.error("🧩 The model's answer has an unexpected structure. Please try again.")
+            st.error("The model's answer has an unexpected structure. Please try again.", icon=":material/data_object:")

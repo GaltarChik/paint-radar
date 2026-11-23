@@ -4,6 +4,8 @@ Paste Reddit posts and Pain Radar uses generative AI to find the most common com
 
 *Individual project for the course "Intro to Generative AI".*
 
+**Project site:** https://galtarchik.github.io/paint-radar/ · **Live app:** https://pain-radar.streamlit.app · **Code:** https://github.com/GaltarChik/paint-radar
+
 ## The problem
 
 Founders, student unions and product teams want to know **what people actually complain about**. The answers are hidden in hundreds of forum posts mixed with jokes, good news and questions. Reading them all by hand is slow. Pain Radar takes raw posts, filters out the noise, groups the real complaints into themes, and turns every theme into a concrete product idea.
@@ -149,8 +151,13 @@ pain-radar/
 ├── experiment_posts.txt  # 6 borderline posts for the Few-shot / Zero-shot experiment
 ├── requirements.txt
 ├── .env.example          # template; the real key lives only in .env (git-ignored)
+├── .streamlit/config.toml  # app theme: paper, ink, highlighter yellow, red pen
 ├── README.md
-└── docs/documentation.pdf
+└── docs/
+    ├── index.html        # project site for GitHub Pages (HTML + CSS + JS, no build step)
+    └── documentation.pdf
 ```
+
+The app and the site share one visual idea: a printout marked with a highlighter, because marking complaints is exactly what step 1 does. The design rules came from the open-source [impeccable](https://github.com/pbakaus/impeccable) design skill, used as a reference.
 
 All demo and experiment posts are invented. They are not real Reddit users' posts.

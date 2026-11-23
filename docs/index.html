@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pain Radar: find what your community complains about</title>
+<meta name="description" content="Paste community posts. Pain Radar marks every complaint, groups them into themes and suggests a product idea for each. A two-step LLM pipeline built with Streamlit and the OpenAI API.">
+<meta property="og:title" content="Pain Radar">
+<meta property="og:description" content="Find what your community complains about, and what to build about it.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23141414'/%3E%3Crect x='6' y='13' width='20' height='8' rx='2' fill='%23FFE94D'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #FDFDFB;
+    --sheet: #FFFFFF;
+    --ink: #141414;
+    --ink-2: #45453F;
+    --ink-3: #65655E;
+    --rule: #DEDED7;
+    --wash: #F1F1EC;
+    --hl: #FFE94D;
+    --hl-soft: #FFF5BF;
+    --pen: #B3261E;
+    --pencil: #8E8E86;
+    --ui: "Archivo", system-ui, sans-serif;
+    --serif: "Source Serif 4", Georgia, serif;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    --ease: cubic-bezier(.22, 1, .36, 1);
+    --gutter: clamp(1rem, 4vw, 3rem);
+    --max: 76rem;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scrollbar-color: var(--ink-3) var(--paper); -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font: 400 1.0625rem/1.6 var(--ui); font-stretch: 100%;
+    text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--hl); color: var(--ink); }
+  a { color: inherit; text-decoration-thickness: 1.5px; text-underline-offset: .22em; }
+  a:hover { text-decoration-color: var(--pen); }
+  :focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; border-radius: 3px; }
+  img, svg { display: block; }
+  .wrap { width: min(100% - 2 * var(--gutter), var(--max)); margin-inline: auto; }
+
+  /* ---------- the highlighter ---------- */
+  .hl {
+    background-image: linear-gradient(var(--hl), var(--hl));
+    background-repeat: no-repeat; background-size: 100% 100%;
+    -webkit-box-decoration-break: clone; box-decoration-break: clone;
+    padding: .06em .22em; margin: 0 -.22em; border-radius: .35em .15em .4em .2em;
+  }
+  .js .hl { background-size: 0% 100%; transition: background-size .75s var(--ease); }
+  .js .hl.is-on { background-size: 100% 100%; }
+
+  /* ---------- top bar ---------- */
+  .bar { position: sticky; top: 0; z-index: 10; background: var(--paper); border-bottom: 1px solid var(--rule); }
+  .bar .wrap { display: flex; align-items: center; gap: 1.5rem; min-height: 4rem; }
+  .mark { font-weight: 850; font-stretch: 118%; letter-spacing: -.02em; font-size: 1.15rem; text-decoration: none; white-space: nowrap; }
+  .mark span { background: var(--hl); padding: 0 .2em; margin-right: .08em; border-radius: .25em .1em .3em .15em; }
+  .nav { display: flex; gap: 1.5rem; margin-left: auto; font-size: .95rem; }
+  .nav a { text-decoration: none; color: var(--ink-2); }
+  .nav a:hover { color: var(--ink); text-decoration: underline; }
+
+  /* ---------- buttons ---------- */
+  .btn { display: inline-flex; align-items: center; gap: .5rem; min-height: 2.75rem; padding: .55rem 1.1rem;
+         border: 1.5px solid var(--ink); border-radius: .35rem; font: 650 .98rem/1 var(--ui); text-decoration: none;
+         color: var(--ink); background: transparent; cursor: pointer; transition: background-color .2s, color .2s; }
+  .btn svg { width: 1.05em; height: 1.05em; }
+  .btn:hover { background: var(--hl-soft); }
+  .btn.primary { background: var(--ink); color: var(--paper); }
+  .btn.primary:hover { background: var(--hl); color: var(--ink); }
+  .bar .btn { min-height: 2.4rem; padding: .4rem .9rem; font-size: .92rem; }
+
+  /* ---------- hero ---------- */
+  .hero { padding-block: clamp(3rem, 8vw, 6rem) clamp(2rem, 4vw, 3rem); }
+  h1 { font-size: clamp(2.6rem, 7.2vw, 5.75rem); line-height: 1.02; font-weight: 850; font-stretch: 112%;
+       letter-spacing: -.03em; margin: 0 0 1.5rem; text-wrap: balance; }
+  /* on big type a highlighter covers the lower part of the line, not the line above */
+  .hero h1 .hl { background-size: 100% 58%; background-position: 0 82%; padding: 0 .1em; margin: 0 -.1em; border-radius: .1em .05em .12em .06em; }
+  .js .hero h1 .hl { background-size: 0% 58%; }
+  .js .hero h1 .hl.is-on { background-size: 100% 58%; }
+  .lede { font-size: clamp(1.1rem, 1.6vw, 1.3rem); color: var(--ink-2); max-width: 40rem; margin: 0 0 2rem; }
+  .actions { display: flex; flex-wrap: wrap; gap: .75rem; }
+
+  /* ---------- the printout ---------- */
+  .sheet { margin: 0 auto; background: var(--sheet); border-radius: 2px;
+           box-shadow: 0 1px 1px rgba(20,20,20,.04), 0 2px 6px rgba(20,20,20,.05), 0 24px 48px -20px rgba(20,20,20,.22);
+           padding: clamp(1.25rem, 3.5vw, 3rem) clamp(1rem, 4vw, 3.5rem); }
+  .sheet-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem 1.5rem;
+                font-size: .85rem; color: var(--ink-3); border-bottom: 1px solid var(--rule); padding-bottom: .9rem; margin-bottom: .5rem; }
+  .sheet-head b { color: var(--ink); font-weight: 650; }
+  .posts { list-style: none; margin: 0; padding: 0; }
+  .post { display: grid; grid-template-columns: minmax(0, 1fr) 15rem; gap: 2.5rem; padding: 1.1rem 0;
+          border-bottom: 1px dashed var(--rule); align-items: start; }
+  .post:last-child { border-bottom: 0; }
+  .post p { margin: 0; font: 400 1.12rem/1.75 var(--serif); max-width: 62ch; }
+  .note { display: flex; gap: .5rem; align-items: flex-start; font-size: .9rem; line-height: 1.4; color: var(--pen); padding-top: .3rem; }
+  .note svg { flex: none; width: 1.1rem; height: 1.1rem; margin-top: .05rem; }
+  .note.quiet { color: var(--ink-3); }
+  .post.dropped p { color: var(--ink-3); text-decoration: line-through 2px var(--pencil); }
+  .more { padding: 1rem 0 0; color: var(--ink-3); font-size: .9rem; }
+  .caption { margin: 1rem auto 0; font-size: .85rem; color: var(--ink-3); max-width: 60rem; }
+
+  /* ---------- sections ---------- */
+  section.block { padding-block: clamp(4rem, 9vw, 7.5rem) 0; }
+  h2 { font-size: clamp(2rem, 4.4vw, 3.4rem); line-height: 1.02; font-weight: 850; font-stretch: 112%;
+       letter-spacing: -.028em; margin: 0 0 1.25rem; max-width: 18ch; text-wrap: balance; }
+  h3 { font-size: 1.25rem; line-height: 1.2; font-weight: 750; font-stretch: 105%; margin: 0 0 .5rem; letter-spacing: -.01em; }
+  .intro { color: var(--ink-2); max-width: 44rem; margin: 0 0 3rem; font-size: 1.12rem; }
+
+  /* pipeline: one typographic line, details under each word */
+  .flow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 2px solid var(--ink); }
+  .stage { padding: 1.5rem 2rem 0 0; }
+  .stage + .stage { border-left: 1px solid var(--rule); padding-left: 2rem; }
+  .stage .word { display: flex; align-items: center; gap: .6rem; font-size: clamp(1.8rem, 3.2vw, 2.6rem); font-weight: 850; font-stretch: 118%; letter-spacing: -.03em; line-height: 1; margin-bottom: 1rem; }
+  .stage p { margin: 0 0 1rem; color: var(--ink-2); }
+  .meta { font-size: .85rem; color: var(--ink-3); }
+  .meta code { font: 500 .82rem var(--mono); color: var(--ink); background: var(--wash); padding: .1em .35em; border-radius: 3px; }
+  .word .strike { text-decoration: line-through 3px var(--pencil); color: var(--ink-3); }
+
+  /* the report */
+  .report { margin-top: clamp(3rem, 6vw, 4.5rem); }
+  .report-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .5rem 2rem;
+                 border-bottom: 2px solid var(--ink); padding-bottom: .75rem; }
+  .report-head h3 { font-size: 1.5rem; margin: 0; }
+  .report-head span { font-size: .85rem; color: var(--ink-3); }
+  .theme { display: grid; grid-template-columns: 11rem minmax(0, 1fr) minmax(0, 1fr); gap: 1.5rem 2.5rem;
+           padding: 1.75rem 0; border-bottom: 1px solid var(--rule); align-items: start; }
+  .count { font-variant-numeric: tabular-nums; }
+  .count .n { font-size: 2.4rem; font-weight: 850; font-stretch: 112%; line-height: 1; }
+  .count .n small { font-size: .95rem; font-weight: 600; font-stretch: 100%; color: var(--ink-3); margin-left: .3rem; }
+  .bar-track { height: .7rem; margin-top: .6rem; background: var(--wash); border-radius: .2rem; }
+  .bar-fill { height: 100%; background: var(--hl); border-radius: .2rem .1rem .25rem .15rem; box-shadow: inset 0 0 0 1px rgba(20,20,20,.08); }
+  .theme p { margin: 0; color: var(--ink-2); }
+  .idea b { display: block; color: var(--pen); font-size: .85rem; font-weight: 700; margin-bottom: .25rem; }
+  .idea p { color: var(--ink); }
+  .reasoning { margin: 2.5rem 0 0; display: grid; grid-template-columns: 11rem minmax(0, 1fr); gap: 1.5rem 2.5rem; }
+  .reasoning h4 { margin: .2rem 0 0; font-size: .95rem; font-weight: 700; }
+  .reasoning blockquote { margin: 0; font: italic 400 1.1rem/1.7 var(--serif); color: var(--ink-2); max-width: 62ch; }
+
+  /* ---------- experiment ---------- */
+  .exp-grid { display: grid; grid-template-columns: minmax(0, 20rem) minmax(0, 1fr); gap: 3rem; align-items: start; }
+  .panel { position: sticky; top: 5.5rem; }
+  .switch { display: inline-flex; border: 1.5px solid var(--ink); border-radius: .4rem; padding: .2rem; gap: .2rem; }
+  .switch button { font: 650 .95rem/1 var(--ui); border: 0; border-radius: .25rem; padding: .7rem 1rem; min-height: 2.6rem;
+                   background: transparent; color: var(--ink); cursor: pointer; transition: background-color .2s, color .2s; }
+  .switch button:hover { background: var(--hl-soft); }
+  .switch button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+  .score { margin: 1.75rem 0 .25rem; font-size: clamp(3.5rem, 7vw, 5rem); font-weight: 850; font-stretch: 112%;
+           letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .score-label { color: var(--ink-3); font-size: .9rem; margin: 0 0 1.5rem; }
+  .rule-quote { margin: 0; padding: 1rem 1.1rem; background: var(--wash); border-radius: .35rem; font: 400 .98rem/1.55 var(--serif); }
+  .rule-quote span { display: block; font: 700 .8rem var(--ui); color: var(--ink-3); margin-bottom: .35rem; }
+  .verdict { font-size: .8rem; font-weight: 650; color: var(--ink-3); margin-bottom: .2rem; }
+  .exp-posts .post { grid-template-columns: minmax(0, 1fr) 14rem; }
+  .note.missed { color: var(--pen); font-weight: 650; }
+  .tables { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2.5rem; margin-top: 3.5rem; }
+  .findings { margin: 0; padding: 0; list-style: none; display: grid; gap: 1.1rem; }
+  .findings li { padding-left: 1.4rem; position: relative; color: var(--ink-2); }
+  .findings li::before { content: ""; position: absolute; left: 0; top: .55em; width: .7rem; height: .45rem; background: var(--hl); border-radius: .15rem; }
+  .findings strong { color: var(--ink); }
+
+  /* ---------- tables ---------- */
+  table { width: 100%; border-collapse: collapse; font-size: .95rem; font-variant-numeric: tabular-nums; }
+  caption { text-align: left; font-weight: 750; font-size: 1.05rem; padding-bottom: .6rem; }
+  th, td { text-align: left; vertical-align: top; padding: .7rem .9rem .7rem 0; border-bottom: 1px solid var(--rule); }
+  thead th { font-size: .8rem; font-weight: 700; color: var(--ink-3); border-bottom: 2px solid var(--ink); }
+  td:first-child { font-weight: 650; white-space: nowrap; }
+  td code, li code, p code { font: 500 .85em var(--mono); background: var(--wash); padding: .08em .35em; border-radius: 3px; }
+  .num { text-align: right; padding-right: 0; }
+  .hood { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3rem 3.5rem; }
+  .hood .wide { grid-column: 1 / -1; }
+  .errors { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 2.5rem; margin: 0; }
+  .errors div { padding: .9rem 0; border-bottom: 1px solid var(--rule); }
+  .errors dt { font-weight: 700; }
+  .errors dd { margin: .15rem 0 0; color: var(--ink-2); font-size: .95rem; }
+
+  /* ---------- close ---------- */
+  .close { margin-top: clamp(4rem, 9vw, 7.5rem); background: var(--hl); }
+  .close .wrap { padding-block: clamp(3.5rem, 8vw, 6rem); display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 2.5rem 4rem; align-items: end; }
+  .close h2 { margin-bottom: 1rem; }
+  .close p { margin: 0 0 1.75rem; max-width: 34rem; }
+  .close .btn:hover { background: var(--paper); }
+  .close .btn.primary:hover { background: var(--paper); color: var(--ink); }
+  pre { margin: 0; background: var(--ink); color: #F4F4EF; border-radius: .4rem; padding: 1.2rem 1.3rem; overflow-x: auto;
+        font: 500 .88rem/1.7 var(--mono); }
+  pre .c { color: #A8A89F; }
+  footer { background: var(--ink); color: #CFCFC7; font-size: .9rem; }
+  footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem 2rem; padding-block: 1.75rem; }
+  footer a { color: #fff; }
+
+  /* ---------- responsive ---------- */
+  @media (max-width: 900px) {
+    br.wide { display: none; }
+    .nav { display: none; }
+    .bar .btn { margin-left: auto; }
+    .post, .exp-posts .post { grid-template-columns: 1fr; gap: .35rem; }
+    .note:not(.quiet):not(.missed) svg { transform: rotate(90deg); } /* arrows point up at the post */
+    .flow { grid-template-columns: 1fr; }
+    .stage, .stage + .stage { border-left: 0; padding: 1.5rem 0; border-bottom: 1px solid var(--rule); }
+    .theme { grid-template-columns: 1fr; gap: .75rem; }
+    .count { display: flex; align-items: center; gap: 1rem; }
+    .count .bar-track { flex: 1; margin: 0; }
+    .reasoning { grid-template-columns: 1fr; gap: .5rem; }
+    .exp-grid, .tables, .hood, .close .wrap { grid-template-columns: 1fr; }
+    .panel { position: static; }
+    .errors { grid-template-columns: 1fr; }
+    td:first-child { white-space: normal; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .js .hl { transition: none; }
+  }
+</style>
+</head>
+<body>
+<script>document.documentElement.classList.add("js");</script>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-arrow-left" viewBox="0 0 20 20"><path d="M17 10H4m0 0 5-5m-5 5 5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-out" viewBox="0 0 20 20"><path d="M8 4H4.5A1.5 1.5 0 0 0 3 5.5v10A1.5 1.5 0 0 0 4.5 17h10a1.5 1.5 0 0 0 1.5-1.5V12M11 3h6v6m0-6-8 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-github" viewBox="0 0 16 16"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></symbol>
+  <symbol id="i-dash" viewBox="0 0 20 20"><path d="M5 10h10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+</svg>
+
+<header class="bar">
+  <div class="wrap">
+    <a class="mark" href="#top" aria-label="Pain Radar, back to top"><span>Pain</span>Radar</a>
+    <nav class="nav" aria-label="Sections">
+      <a href="#how">How it works</a>
+      <a href="#experiment">Experiment</a>
+      <a href="#hood">Under the hood</a>
+      <a href="https://github.com/GaltarChik/paint-radar">GitHub</a>
+    </nav>
+    <a class="btn primary" href="https://pain-radar.streamlit.app">Open the app <svg aria-hidden="true"><use href="#i-out"/></svg></a>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero wrap">
+    <h1>Find what your community<br class="wide"> <span class="hl" data-hero>complains</span> about.</h1>
+    <p class="lede">Paste posts from Reddit. Pain Radar marks every complaint, groups the complaints into themes and suggests a product idea for each one. Two LLM steps, four prompting techniques, one report.</p>
+    <div class="actions">
+      <a class="btn primary" href="https://pain-radar.streamlit.app">Open the app <svg aria-hidden="true"><use href="#i-out"/></svg></a>
+      <a class="btn" href="https://github.com/GaltarChik/paint-radar"><svg aria-hidden="true"><use href="#i-github"/></svg> Read the code</a>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <figure class="sheet" style="margin:0" aria-label="Step 1 output on the demo posts">
+      <div class="sheet-head">
+        <span><b>r/college</b>, demo set, 16 posts</span>
+        <span>Step 1: <b>gpt-4o-mini</b>, few-shot, temperature 0</span>
+      </div>
+      <ol class="posts">
+        <li class="post"><p><span class="hl" data-hero>Why does every professor require a different $200 textbook that we use for maybe three chapters? I spent over $600 this semester and half the books are still in plastic.</span></p>
+          <div class="note"><svg aria-hidden="true"><use href="#i-arrow-left"/></svg>Textbook costs are high for limited use.</div></li>
+        <li class="post"><p><span class="hl" data-hero>Course registration opened at 7am and by 7:02 every section of Intro to Stats was full. The portal kept crashing and now I might have to graduate a semester late.</span></p>
+          <div class="note"><svg aria-hidden="true"><use href="#i-arrow-left"/></svg>Course registration portal crashes and sections fill up quickly.</div></li>
+        <li class="post"><p>Just passed my organic chemistry final!! Studied for weeks and it actually paid off. Celebrating with pizza tonight.</p>
+          <div class="note quiet"><svg aria-hidden="true"><use href="#i-dash"/></svg>Not a problem</div></li>
+        <li class="post"><p><span class="hl" data-hero>My roommate stays up until 4am gaming with his headset volume on max. I have 8am classes and I'm running on four hours of sleep every night.</span></p>
+          <div class="note"><svg aria-hidden="true"><use href="#i-arrow-left"/></svg>Roommate's late-night gaming disrupts sleep.</div></li>
+        <li class="post dropped"><p>lol same</p>
+          <div class="note quiet"><svg aria-hidden="true"><use href="#i-dash"/></svg>Dropped before any AI call: under 20 characters.</div></li>
+        <li class="post"><p>Tip for freshmen: the second floor of the engineering building has empty study rooms almost all day. Nobody seems to know about them.</p>
+          <div class="note quiet"><svg aria-hidden="true"><use href="#i-dash"/></svg>Not a problem</div></li>
+      </ol>
+      <p class="more">10 more posts on the sheet. 10 of 15 were marked as problems.</p>
+    </figure>
+    <p class="caption">Posts are invented for the demo. A highlight means the model labelled the post as a problem; the notes in the margin are its one-sentence summaries from a test run.</p>
+  </div>
+
+  <section class="block wrap" id="how" aria-labelledby="how-title">
+    <h2 id="how-title">From a pile of posts to a ranked report</h2>
+    <p class="intro">Each step does one job. Cheap work goes to a cheap model; the one hard task goes to a stronger one.</p>
+    <div class="flow">
+      <div class="stage">
+        <div class="word"><span class="strike">Filter</span></div>
+        <p>No AI. The text is split at blank lines, and posts shorter than 20 characters are dropped, so no tokens are spent on noise.</p>
+        <div class="meta">16 posts in, 15 out</div>
+      </div>
+      <div class="stage">
+        <div class="word"><span class="hl is-on">Mark</span></div>
+        <p>Step 1. A model reads every post and answers in JSON: is this a problem, and if so, what is it, in one neutral sentence.</p>
+        <div class="meta"><code>gpt-4o-mini</code>, temperature 0, few-shot or zero-shot</div>
+      </div>
+      <div class="stage">
+        <div class="word">Group</div>
+        <p>Step 2. A stronger model, cast as a product analyst, first writes its reasoning, then groups the problems into themes and proposes a product for each.</p>
+        <div class="meta"><code>gpt-4.1-mini</code>, temperature 0.7, role + chain-of-thought</div>
+      </div>
+    </div>
+
+    <div class="report" aria-labelledby="report-title">
+      <div class="report-head">
+        <h3 id="report-title">The report for the demo set</h3>
+        <span>Step 2 output, verbatim: gpt-4.1-mini, temperature 0.7, 4 themes</span>
+      </div>
+      <div class="theme">
+        <div class="count"><div class="n">3<small>posts</small></div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div></div>
+        <div><h3>Cost and materials burden</h3><p>High costs for textbooks and homework platforms cause financial strain on students.</p></div>
+        <div class="idea"><b>Product idea</b><p>A rental and digital access platform for textbooks and homework resources that offers pay-per-use pricing to reduce upfront and unnecessary costs for students.</p></div>
+      </div>
+      <div class="theme">
+        <div class="count"><div class="n">3<small>posts</small></div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div></div>
+        <div><h3>Living and scheduling conflicts</h3><p>Noise, roommate habits, and scheduling conflicts disrupt students' focus, sleep, and job commitments.</p></div>
+        <div class="idea"><b>Product idea</b><p>An app that helps students coordinate schedules and share living space preferences, along with noise level alerts and conflict resolution resources to improve dorm life and time management.</p></div>
+      </div>
+      <div class="theme">
+        <div class="count"><div class="n">2<small>posts</small></div><div class="bar-track"><div class="bar-fill" style="width:66.7%"></div></div></div>
+        <div><h3>Group project challenges</h3><p>Unequal work and poor communication lead to frustration in group assignments.</p></div>
+        <div class="idea"><b>Product idea</b><p>A collaboration tool designed for student group projects that tracks individual contributions and facilitates clear communication to ensure fair workload distribution.</p></div>
+      </div>
+      <div class="theme">
+        <div class="count"><div class="n">2<small>posts</small></div><div class="bar-track"><div class="bar-fill" style="width:66.7%"></div></div></div>
+        <div><h3>Course registration issues</h3><p>Portal crashes and inefficient waitlists delay class enrollment and graduation plans.</p></div>
+        <div class="idea"><b>Product idea</b><p>A more reliable registration system with improved waitlist management that provides real-time updates and prioritization to prevent crashes and delays.</p></div>
+      </div>
+      <div class="reasoning">
+        <h4>How the model reasoned</h4>
+        <blockquote>“Problems 1, 5, and 8 relate to textbook and homework platform costs, showing a common financial burden theme. Problems 4 and 9 both involve group project collaboration issues, highlighting teamwork frustrations. Problems 2 and 7 are about course registration and waitlist inefficiencies, indicating administrative process challenges. Problems 3, 6, and 10 concern living or scheduling conflicts that affect student well-being and productivity. The largest group is about cost-related issues, followed by collaboration and administrative problems.”</blockquote>
+      </div>
+    </div>
+  </section>
+
+  <section class="block wrap" id="experiment" aria-labelledby="exp-title">
+    <h2 id="exp-title">Clear rules beat clever examples</h2>
+    <p class="intro">Six posts were written to be hard: a complaint dressed as a joke, a complaint dressed as a question, and harmless posts that look similar. Switch between the two prompt versions and watch what the model marks.</p>
+    <div class="exp-grid">
+      <div class="panel">
+        <div class="switch" role="group" aria-label="Prompt version">
+          <button type="button" data-v="v1" aria-pressed="true">Prompt v1</button>
+          <button type="button" data-v="v2" aria-pressed="false">Prompt v2</button>
+        </div>
+        <p class="score" aria-live="polite"><span id="score">4</span>/6</p>
+        <p class="score-label">correct labels, few-shot and zero-shot alike</p>
+        <blockquote class="rule-quote" id="rule"><span>The rule in v1</span>Does NOT count as a problem: good news, jokes, tips, invitations to events.</blockquote>
+      </div>
+      <ol class="posts exp-posts" id="exp-posts"></ol>
+    </div>
+
+    <div class="tables">
+      <table>
+        <caption>Results, gpt-4o-mini, 2 runs each</caption>
+        <thead><tr><th scope="col">Data set</th><th scope="col">Version</th><th scope="col" class="num">Few-shot</th><th scope="col" class="num">Zero-shot</th></tr></thead>
+        <tbody>
+          <tr><td>Demo, 15 clear posts</td><td>v1 and v2</td><td class="num">15/15</td><td class="num">15/15</td></tr>
+          <tr><td>Borderline, 6 posts</td><td>v1</td><td class="num">4/6</td><td class="num">4/6</td></tr>
+          <tr><td>Borderline, 6 posts</td><td>v2</td><td class="num">5/6</td><td class="num">5/6</td></tr>
+        </tbody>
+      </table>
+      <ul class="findings">
+        <li><strong>The instruction did the work.</strong> Rewriting one rule lifted both modes from 4/6 to 5/6. The new few-shot examples added nothing on top.</li>
+        <li><strong>Examples changed the voice.</strong> With examples, summaries stayed neutral: “Online homework platform adds extra costs.” Without them: “…feels like a scam.”</li>
+        <li><strong>Temperature 0 is repeatable.</strong> Every configuration gave identical labels on both runs, so the comparison is fair.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="block wrap" id="hood" aria-labelledby="hood-title">
+    <h2 id="hood-title">Under the hood</h2>
+    <p class="intro">One Streamlit file under 200 lines, one file of prompts, the OpenAI Chat Completions API in JSON mode.</p>
+    <div class="hood">
+      <table>
+        <caption>Prompting techniques</caption>
+        <thead><tr><th scope="col">Technique</th><th scope="col">What it does</th></tr></thead>
+        <tbody>
+          <tr><td>Zero-shot</td><td>Step 1 with instructions only: what counts as a problem, what does not.</td></tr>
+          <tr><td>Few-shot</td><td>The same instructions plus four labelled examples. A switch in the app compares both.</td></tr>
+          <tr><td>Role</td><td>Step 2 speaks as an experienced product analyst: concrete, no buzzwords.</td></tr>
+          <tr><td>Chain-of-thought</td><td>The model writes <code>reasoning</code> before <code>themes</code>, so it thinks first. The reasoning is shown to the user.</td></tr>
+          <tr><td>JSON output</td><td>A strict format in both steps, so the code can parse every answer.</td></tr>
+        </tbody>
+      </table>
+      <table>
+        <caption>Parameters, and why</caption>
+        <thead><tr><th scope="col">Setting</th><th scope="col">Reason</th></tr></thead>
+        <tbody>
+          <tr><td>temperature 0</td><td>Step 1 has one right answer per post, and the same post should get the same label every time.</td></tr>
+          <tr><td>temperature 0.7</td><td>Step 2 invents product ideas: at 0 they are generic, above 1.0 they lose focus.</td></tr>
+          <tr><td>top_p 0.9</td><td>Cuts the tail of unlikely words while ideas stay varied.</td></tr>
+          <tr><td>max_tokens</td><td>2000 for step 1 (about 50 posts), 1500 for step 2 so the JSON is never cut off.</td></tr>
+          <tr><td>retries</td><td>60 s timeout and 3 automatic retries for timeouts and rate limits.</td></tr>
+        </tbody>
+      </table>
+      <div class="wide">
+        <h3>Built to fail politely</h3>
+        <dl class="errors">
+          <div><dt>No key, or fewer than 3 posts</dt><dd>Stopped before any request, with the rule explained.</dd></div>
+          <div><dt>Wrong key</dt><dd>Says the key was rejected and where to fix it.</dd></div>
+          <div><dt>Rate limit or no internet</dt><dd>Retried three times, then a plain message.</dd></div>
+          <div><dt>Unknown model name</dt><dd>Shows the API error code and points to the sidebar.</dd></div>
+          <div><dt>Broken JSON</dt><dd>Asks the model once more before giving up.</dd></div>
+          <div><dt>Answer cut off</dt><dd>Detected from the finish reason, with advice to raise Max tokens.</dd></div>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <section class="close" aria-labelledby="close-title">
+    <div class="wrap">
+      <div>
+        <h2 id="close-title">Try it on your own community</h2>
+        <p>Paste a few dozen posts from any forum, or load the demo set, and get a ranked report you can download as Markdown.</p>
+        <div class="actions">
+          <a class="btn primary" href="https://pain-radar.streamlit.app">Open the app <svg aria-hidden="true"><use href="#i-out"/></svg></a>
+          <a class="btn" href="https://github.com/GaltarChik/paint-radar"><svg aria-hidden="true"><use href="#i-github"/></svg> Read the code</a>
+        </div>
+      </div>
+      <pre aria-label="Run it locally"><span class="c"># run it locally</span>
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+<span class="c"># put your key in .env: OPENAI_API_KEY=...</span>
+streamlit run app.py</pre>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Pain Radar, an individual project for the course Intro to Generative AI, 2026.</span>
+    <span>Built with Streamlit and the OpenAI API. <a href="https://github.com/GaltarChik/paint-radar">Source on GitHub</a></span>
+  </div>
+</footer>
+
+<script>
+  // Real results of the borderline experiment (gpt-4o-mini, identical for few-shot and zero-shot)
+  const POSTS = [
+    { text: "Is it normal that the financial aid office takes six weeks to answer one email? Asking for a friend.", complaint: true,
+      v1: "Financial aid office has slow response times.", v2: "The financial aid office takes too long to respond to emails." },
+    { text: "Does anyone else feel like the gym is always packed between 4 and 8pm? Thinking of going at 6am lol", complaint: true,
+      v1: null, v2: null, hint: "Ambiguous: the author already has a fix." },
+    { text: "lmao the dining hall served the same pasta five days in a row, at this point it's a tradition", complaint: true,
+      v1: null, v2: "The dining hall served the same meal for five consecutive days." },
+    { text: "Just switched my major to computer science, wish me luck everyone!", complaint: false },
+    { text: "Any recommendations for a good coffee place near campus to study on weekends?", complaint: false },
+    { text: "Reminder: midterm grades are posted on Friday. Good luck everyone!", complaint: false },
+  ];
+  const RULES = {
+    v1: ["The rule in v1", "Does NOT count as a problem: good news, jokes, tips, invitations to events."],
+    v2: ["The rule in v2", "A complaint still counts when it is written as a joke or as a question."],
+  };
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const icon = (id) => `<svg aria-hidden="true"><use href="#${id}"/></svg>`;
+  const list = document.getElementById("exp-posts");
+
+  function sweep(marks, step = 110) {
+    marks.forEach((m, i) => reduced ? m.classList.add("is-on") : setTimeout(() => m.classList.add("is-on"), 80 + i * step));
+  }
+
+  function render(version) {
+    let correct = 0;
+    list.innerHTML = POSTS.map((p) => {
+      const note = p[version] || null;
+      const flagged = Boolean(note);
+      if (flagged === p.complaint) correct++;
+      let side;
+      if (flagged) side = `<div class="note">${icon("i-arrow-left")}${note}</div>`;
+      else if (p.complaint) side = `<div class="note missed">${icon("i-dash")}Missed: this is a complaint.${p.hint ? " " + p.hint : ""}</div>`;
+      else side = `<div class="note quiet">${icon("i-dash")}Correctly left unmarked.</div>`;
+      const text = flagged ? `<span class="hl">${p.text}</span>` : p.text;
+      return `<li class="post"><div><div class="verdict">${p.complaint ? "A complaint" : "Not a complaint"}</div><p>${text}</p></div>${side}</li>`;
+    }).join("");
+    document.getElementById("score").textContent = correct;
+    const [label, rule] = RULES[version];
+    document.getElementById("rule").innerHTML = `<span>${label}</span>${rule}`;
+    document.querySelectorAll(".switch button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === version)));
+    requestAnimationFrame(() => sweep([...list.querySelectorAll(".hl")], 160));
+  }
+
+  document.querySelectorAll(".switch button").forEach((b) => b.addEventListener("click", () => render(b.dataset.v)));
+  render("v1");
+
+  // The one authored moment: the highlighter sweeps over the hero and the printout on load
+  sweep([...document.querySelectorAll("[data-hero]")]);
+</script>
+</body>
+</html>
