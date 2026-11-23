@@ -18,28 +18,31 @@ For each post decide whether the author describes a PROBLEM: a real pain, frustr
 that a product or service could help with.
 
 Counts as a problem: complaints about costs, broken or slow systems, bad tools, lack of time or sleep,
-conflicts with other people that keep happening.
-Does NOT count as a problem: good news, jokes, tips, invitations to events,
+conflicts with other people that keep happening. A complaint still counts when it is written
+as a joke or as a question.
+Does NOT count as a problem: good news, jokes with no complaint inside, tips, invitations to events,
 simple questions that are easy to answer.
 
 If a post is a problem, describe it in "problem" as one short neutral sentence (max 15 words)
 that names the pain itself, not the author's emotions. If it is not a problem, use an empty string.
 Answer only with JSON."""
 
-# 4 examples: 2 problems + 2 non-problems. They are NOT taken from the demo posts,
+# 4 examples: 2 problems + 2 non-problems. They are NOT taken from the demo or experiment posts,
 # so the model learns the rule, not the answers.
+# v2: the problems are the HARD cases (a complaint as a joke, a complaint as a question), because
+# with obvious examples (v1) few-shot was no better than zero-shot. See README "Experiments".
 FEW_SHOT_EXAMPLES = """
 
 Examples of correct answers:
 
-Post: "The campus wifi drops every time I join a Zoom lecture. I already missed two quizzes because of it."
-Answer: {"is_problem": true, "problem": "Campus wifi is unreliable during online lectures."}
+Post: "The library printer has been 'temporarily out of order' since September, it's basically part of the campus tour now 😂"
+Answer: {"is_problem": true, "problem": "The library printer has been broken for months."}
 
 Post: "Finally submitted my thesis draft, going to sleep for a week!"
 Answer: {"is_problem": false, "problem": ""}
 
-Post: "A parking permit costs $400 a year and there are still no free spots after 9am."
-Answer: {"is_problem": true, "problem": "Campus parking is expensive and always full."}
+Post: "Is it just me or does the campus shuttle never come on time? Waited 40 minutes again today."
+Answer: {"is_problem": true, "problem": "The campus shuttle is often very late."}
 
 Post: "Which dining hall has the best pancakes on Sunday mornings?"
 Answer: {"is_problem": false, "problem": ""}"""
