@@ -1,10 +1,15 @@
-# 📡 Pain Radar
+# Pain Radar
 
 Paste Reddit posts and Pain Radar uses generative AI to find the most common complaints and suggest a product idea for each one.
 
 *Individual project for the course "Intro to Generative AI".*
 
-**Project site:** https://galtarchik.github.io/paint-radar/ · **Live app:** https://pain-radar.streamlit.app · **Code:** https://github.com/GaltarChik/paint-radar
+**Use it in the browser:** https://galtarchik.github.io/paint-radar/ (bring your own OpenAI key) · **Code:** https://github.com/GaltarChik/paint-radar
+
+There are two versions of the same program:
+
+- **Python app** (`app.py` + `prompts.py`, Streamlit): the main version of the course project, run locally.
+- **Web version** (`docs/`, plain HTML + CSS + JavaScript): the same pipeline and the same prompts, hosted on GitHub Pages. See [Web version](#web-version).
 
 ## The problem
 
@@ -31,6 +36,21 @@ posts ──► pre-filter (no AI) ──► LLM step 1: classification ──�
 | 2: themes report | `gpt-4.1-mini` | One harder task (grouping + ideas): a stronger model pays off |
 
 Both can be changed in the sidebar. Reasoning models (`gpt-5*`, o-series) are not used: they do not accept a custom `temperature` or `max_tokens`. The originally planned `gpt-4.1-nano` was retired by OpenAI (API returns 404), so it was replaced with `gpt-4o-mini`.
+
+## Web version
+
+The web version (`docs/index.html`, `docs/app.js`, `docs/prompts.js`) works in two modes:
+
+- **Through `server.py`** (presentations): the page sees `/api/config`, hides the key field and sends its requests to `/api/chat`. The server adds the key from `.env` and forwards them to OpenAI. The key never leaves the laptop; `.env` is outside `docs/`, so the server cannot hand it out.
+- **On GitHub Pages**: there is no server, so the page calls the OpenAI API directly from the browser, as described below.
+
+GitHub Pages can only serve files; it cannot run Python or keep a secret. So in that mode:
+
+- The visitor pastes **their own** API key into the page. It stays in that browser (in `localStorage` only if "Remember on this device" is ticked) and is sent only to `api.openai.com`. It is never part of the site's code, so the author's key cannot leak and strangers cannot spend the author's money.
+- `docs/prompts.js` is a word-for-word copy of `prompts.py` (checked automatically: all five prompts are identical).
+- `docs/app.js` repeats `app.py`: the same pre-filter, two LLM steps, models and parameters, JSON retry, cut-off detection, sorting of themes, metrics and Markdown export. Like the Python SDK, it retries timeouts, 429 and 5xx errors up to 3 times.
+- One browser-specific detail: OpenAI answers a **rejected key (401) without CORS headers**, so the browser cannot read that response and sees a failed request. The page therefore says "OpenAI refused the request… check the key" when the request fails while the computer is online, and "No internet connection" when it is offline. Successful answers and other errors (for example 404 for a wrong model) do carry CORS headers and are reported normally.
+- Everything the model returns is inserted into the page as text, never as HTML.
 
 ## Prompt engineering
 
@@ -141,6 +161,18 @@ streamlit run app.py
 
 The app opens at http://localhost:8501. Click **Load demo posts** → **Analyze**.
 
+### Web version with the key from `.env` (for presentations)
+
+`server.py` serves the web version and adds the key from `.env` on the server side, so the browser never sees it and nobody has to type it:
+
+```powershell
+python server.py --share
+```
+
+It prints two addresses: `http://localhost:8000` for this laptop and `http://<laptop IP>:8000` for **another computer in the same Wi-Fi** (for example the classroom PC). Without `--share` the page opens only on this laptop. While `--share` is running, anyone on that network who opens the address uses your key, so stop it with `Ctrl+C` after the presentation.
+
+Online, without `server.py`, the page lives at https://galtarchik.github.io/paint-radar/ (Settings → Pages → branch `main`, folder `/docs`). There it asks each visitor for their own key.
+
 ## Project structure
 
 ```
@@ -149,15 +181,18 @@ pain-radar/
 ├── prompts.py            # all prompts (zero-shot, few-shot, role, chain-of-thought)
 ├── sample_posts.txt      # 16 invented r/college-style posts (demo)
 ├── experiment_posts.txt  # 6 borderline posts for the Few-shot / Zero-shot experiment
+├── server.py             # serves docs/ and adds the key from .env (web version with the key on the laptop)
 ├── requirements.txt
 ├── .env.example          # template; the real key lives only in .env (git-ignored)
 ├── .streamlit/config.toml  # app theme: paper, ink, highlighter yellow, red pen
 ├── README.md
-└── docs/
-    ├── index.html        # project site for GitHub Pages (HTML + CSS + JS, no build step)
+└── docs/                 # web version, served by GitHub Pages (no build step)
+    ├── index.html        # page and styles
+    ├── app.js            # pipeline, API calls, error handling, report
+    ├── prompts.js        # word-for-word copy of prompts.py
     └── documentation.pdf
 ```
 
-The app and the site share one visual idea: a printout marked with a highlighter, because marking complaints is exactly what step 1 does. The design rules came from the open-source [impeccable](https://github.com/pbakaus/impeccable) design skill, used as a reference.
+Both versions share one visual idea: a printout marked with a highlighter, because marking complaints is exactly what step 1 does. The design rules came from the open-source [impeccable](https://github.com/pbakaus/impeccable) design skill, used as a reference.
 
 All demo and experiment posts are invented. They are not real Reddit users' posts.
