@@ -72,6 +72,17 @@ def classify_posts(posts, model, few_shot):
     return data.get("results", [])
 
 
+# ---------- LLM step 2: themes report ----------
+
+def find_themes(problems, model, temperature, top_p, max_tokens, n_themes):
+    """Group the problems into themes with product ideas. Returns (reasoning, themes)."""
+    data = ask_llm(model, prompts.THEMES_SYSTEM, prompts.themes_user_prompt(problems, n_themes),
+                   temperature, top_p, max_tokens)
+    # the model does not always sort correctly, so we sort in code: most common theme first
+    themes = sorted(data.get("themes", []), key=lambda t: t.get("count", 0), reverse=True)
+    return data.get("reasoning", ""), themes
+
+
 # ---------- Callbacks: they fill the text area before the page is redrawn ----------
 
 def load_demo():
@@ -95,6 +106,12 @@ model_step2 = st.sidebar.text_input("Model for step 2 (themes report)", "gpt-4.1
 st.sidebar.subheader("Step 1: classification")
 technique = st.sidebar.radio("Prompting technique", ["Few-shot", "Zero-shot"], horizontal=True)
 st.sidebar.caption("Few-shot adds 4 labelled examples to the prompt. Zero-shot uses instructions only.")
+
+st.sidebar.subheader("Step 2: themes report")
+temperature = st.sidebar.slider("Temperature", 0.0, 1.5, 0.7, 0.1, help="Higher = more varied product ideas")
+top_p = st.sidebar.slider("Top-p", 0.1, 1.0, 0.9, 0.05, help="Ignore the least likely 10% of words")
+max_tokens = st.sidebar.slider("Max tokens", 300, 3000, 1500, 100, help="Length limit of the report")
+n_themes = st.sidebar.slider("Number of themes", 2, 6, 4)
 
 # ---------- Main page ----------
 
@@ -122,13 +139,24 @@ if st.button("Analyze", type="primary"):
         results = classify_posts(posts, model_step1, few_shot=(technique == "Few-shot"))
 
     st.subheader("Step 1: Classification")
-    rows = [
-        {
-            "#": r["id"],
-            "Post": posts[r["id"] - 1][:100] + "...",  # ids start at 1, Python lists at 0
-            "Problem?": "✅" if r["is_problem"] else "—",
-            "Problem": r.get("problem", ""),
-        }
-        for r in results
-    ]
+    rows = [{"#": r["id"], "Post": posts[r["id"] - 1][:100] + "...",  # ids start at 1, lists at 0
+             "Problem?": "✅" if r["is_problem"] else "—", "Problem": r.get("problem", "")}
+            for r in results]
     st.dataframe(rows, hide_index=True, width="stretch")
+
+    problems = [r["problem"] for r in results if r["is_problem"]]
+    if not problems:
+        st.info("No problems found in these posts, so there is nothing to group.")
+        st.stop()
+
+    with st.spinner(f"Step 2: grouping {len(problems)} problems into themes with {model_step2}..."):
+        reasoning, themes = find_themes(problems, model_step2, temperature, top_p, max_tokens, n_themes)
+
+    st.subheader("Step 2: Top problems and product ideas")
+    for i, theme in enumerate(themes, start=1):
+        with st.expander(f"{i}. {theme['name']} ({theme['count']} posts)", expanded=(i == 1)):
+            st.write(theme["description"])
+            st.markdown(f"**Example:** *{theme['example_problem']}*")
+            st.success(f"💡 **Product idea:** {theme['product_idea']}")
+    with st.expander("🧠 How the model reasoned"):
+        st.write(reasoning)

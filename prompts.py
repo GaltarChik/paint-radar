@@ -1,8 +1,13 @@
 """All prompts of Pain Radar live here, so they are easy to read and show in the presentation.
 
-Prompting techniques used in step 1 (classification):
+Prompting techniques:
+  Step 1 (classification)
   - zero-shot: instructions only (CLASSIFY_SYSTEM)
   - few-shot:  the same instructions + 4 labelled examples (FEW_SHOT_EXAMPLES)
+  Step 2 (themes report)
+  - role / persona: the model acts as an experienced product analyst (THEMES_SYSTEM)
+  - chain-of-thought: the model must write "reasoning" BEFORE "themes" (themes_user_prompt)
+  Both steps
   - structured output: a strict JSON format the code can parse
 """
 
@@ -50,3 +55,35 @@ def classify_user_prompt(posts):
 Return JSON in exactly this format, with one entry for every post:
 {{"results": [{{"id": 1, "is_problem": true, "problem": "short description"}},
              {{"id": 2, "is_problem": false, "problem": ""}}]}}"""
+
+
+# ---------- Step 2: group problems into themes + product ideas ----------
+
+# Role / persona: tells the model which expertise and point of view to use
+THEMES_SYSTEM = """You are an experienced product analyst. You study user complaints from online
+communities, find the pains that many people share, and turn them into realistic product opportunities.
+You are concrete and practical: no buzzwords, no vague advice. Answer only with JSON."""
+
+
+def themes_user_prompt(problems, n_themes):
+    """Chain-of-thought: the "reasoning" field comes first, so the model thinks before it answers."""
+    numbered = "\n".join(f"{i}. {problem}" for i, problem in enumerate(problems, start=1))
+    return f"""Here are {len(problems)} problems found in student posts:
+
+{numbered}
+
+Group these problems into {n_themes} themes (fewer only if there are not enough different problems).
+
+Think step by step first. In "reasoning" write 3-6 short sentences: which problems belong together
+and why, and which theme is the most common. Only after that fill "themes".
+
+For each theme:
+- "name": 2-5 words
+- "count": how many problems from the list belong to this theme
+- "description": one sentence about the pain
+- "example_problem": one problem from the list above, copied as written
+- "product_idea": 1-2 sentences: a concrete product or service, who it is for, how it solves the pain
+
+Sort themes by "count", largest first. Return JSON in exactly this format:
+{{"reasoning": "...", "themes": [{{"name": "...", "count": 3, "description": "...",
+  "example_problem": "...", "product_idea": "..."}}]}}"""
