@@ -12,8 +12,12 @@ import streamlit as st
 from dotenv import load_dotenv
 from openai import OpenAI
 
+import prompts
+
 SAMPLE_FILE = Path(__file__).parent / "sample_posts.txt"
 MIN_POST_LENGTH = 20  # shorter posts ("lol same") carry no useful signal
+# Step 1 answer is ~35 tokens per post, so 2000 tokens is enough for ~50 posts
+STEP1_MAX_TOKENS = 2000
 
 load_dotenv(Path(__file__).parent / ".env")  # reads OPENAI_API_KEY from .env next to app.py
 API_KEY = os.getenv("OPENAI_API_KEY")
@@ -56,6 +60,18 @@ def ask_llm(model, system_prompt, user_prompt, temperature=0.0, top_p=1.0, max_t
     return parse_json(response.choices[0].message.content)
 
 
+# ---------- LLM step 1: classification ----------
+
+def classify_posts(posts, model, few_shot):
+    """Ask the model which posts describe a problem. Returns a list of dicts."""
+    system_prompt = prompts.CLASSIFY_SYSTEM + (prompts.FEW_SHOT_EXAMPLES if few_shot else "")
+    # temperature=0: classification has one right answer, so we want the most likely,
+    # repeatable label (the same post gets the same label on every run)
+    data = ask_llm(model, system_prompt, prompts.classify_user_prompt(posts),
+                   temperature=0, max_tokens=STEP1_MAX_TOKENS)
+    return data.get("results", [])
+
+
 # ---------- Callbacks: they fill the text area before the page is redrawn ----------
 
 def load_demo():
@@ -76,14 +92,9 @@ st.sidebar.header("Settings")
 model_step1 = st.sidebar.text_input("Model for step 1 (classification)", "gpt-4o-mini")
 model_step2 = st.sidebar.text_input("Model for step 2 (themes report)", "gpt-4.1-mini")
 
-# TEMPORARY (stage 2): check that both models answer. Will be removed later.
-if st.sidebar.button("Test API connection"):
-    if client is None:
-        st.sidebar.error("OPENAI_API_KEY is missing. Add it to the .env file.")
-    else:
-        for model in (model_step1, model_step2):
-            answer = ask_llm(model, "You answer in JSON.", 'Return exactly {"status": "ok"}.', max_tokens=20)
-            st.sidebar.success(f"{model}: {answer}")
+st.sidebar.subheader("Step 1: classification")
+technique = st.sidebar.radio("Prompting technique", ["Few-shot", "Zero-shot"], horizontal=True)
+st.sidebar.caption("Few-shot adds 4 labelled examples to the prompt. Zero-shot uses instructions only.")
 
 # ---------- Main page ----------
 
@@ -102,3 +113,22 @@ st.text_area("Posts", key="posts_text", height=300, placeholder="Paste posts her
 if st.button("Analyze", type="primary"):
     posts = split_posts(st.session_state.posts_text)
     st.success(f"Found {len(posts)} posts (posts shorter than {MIN_POST_LENGTH} characters are skipped).")
+
+    if client is None:
+        st.error("OPENAI_API_KEY is missing. Add it to the .env file.")
+        st.stop()
+
+    with st.spinner(f"Step 1: classifying posts with {model_step1} ({technique})..."):
+        results = classify_posts(posts, model_step1, few_shot=(technique == "Few-shot"))
+
+    st.subheader("Step 1: Classification")
+    rows = [
+        {
+            "#": r["id"],
+            "Post": posts[r["id"] - 1][:100] + "...",  # ids start at 1, Python lists at 0
+            "Problem?": "✅" if r["is_problem"] else "—",
+            "Problem": r.get("problem", ""),
+        }
+        for r in results
+    ]
+    st.dataframe(rows, hide_index=True, width="stretch")
